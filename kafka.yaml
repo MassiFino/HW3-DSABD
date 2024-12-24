@@ -1,0 +1,176 @@
+---
+# 1. NetworkPolicy per Kafka
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kafka-network
+spec:
+  podSelector:
+    matchLabels:
+      network/kafka-network: "true"
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              network/kafka-network: "true"
+---
+# 2. Service per Kafka (NodePort)
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  labels:
+    app: kafka
+spec:
+  selector:
+    app: kafka
+  type: NodePort
+  ports:
+    - name: metrics
+      port: 9308
+      targetPort: 9308
+      nodePort: 30093
+    - name: internal
+      port: 29092
+      targetPort: 29092
+    - name: external
+      port: 30092
+      targetPort: 9092
+      nodePort: 30092
+---
+# 3. StatefulSet per Kafka (con volumeMount e volumeClaimTemplates)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  labels:
+    app: kafka
+spec:
+  serviceName: "kafka"          # usa questo Service per l'indirizzo base dei Pod
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: kafka
+        network/kafka-network: "true"
+    spec:
+      nodeSelector:
+        custom-label: "worker"
+      enableServiceLinks: false
+      hostname: kafka
+      restartPolicy: Always
+      containers:
+        - name: kafka
+          image: confluentinc/cp-kafka:7.0.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 29092  # interno
+            - containerPort: 9092   # esterno
+          env:
+            - name: JMX_PORT
+              value: "9010"
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: "INTERNAL://kafka:29092,LISTENER_EXTERNAL://kafka:9092"
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "true"
+            - name: KAFKA_BROKER_ID
+              value: "1"
+            - name: KAFKA_DEFAULT_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: "INTERNAL"
+            - name: KAFKA_LISTENERS
+              value: "INTERNAL://:29092,LISTENER_EXTERNAL://:9092"
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "INTERNAL:PLAINTEXT,LISTENER_EXTERNAL:PLAINTEXT"
+            - name: KAFKA_NUM_PARTITIONS
+              value: "1"
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_LOG_CLEANUP_POLICY
+              value: "compact"
+            - name: KAFKA_ZOOKEEPER_CONNECT
+              value: "zookeeper:2181"
+          volumeMounts:
+            - name: statefully-stateful-volume
+              mountPath: /var/lib/kafka
+
+        - name: kafka-exporter
+          image: danielqsj/kafka-exporter:latest
+          ports:
+            - name: metrics
+              containerPort: 9308
+          args:
+            - --kafka.server=localhost:9092
+          # Se non scrive nulla su disco, non ha bisogno di un volumeMount
+  volumeClaimTemplates:
+    - metadata:
+        name: statefully-stateful-volume
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+---
+# 4. Service per Zookeeper
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper
+  labels:
+    app: zookeeper
+spec:
+  selector:
+    app: zookeeper
+  ports:
+    - name: "2181"
+      port: 2181
+      targetPort: 2181
+---
+# 5. StatefulSet per Zookeeper (con volumeMount e volumeClaimTemplates)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: zookeeper
+  labels:
+    app: zookeeper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zookeeper
+  template:
+    metadata:
+      labels:
+        app: zookeeper
+        network: kafka-network
+        network/kafka-network: "true"
+    spec:
+      hostname: zookeeper
+      restartPolicy: Always
+      containers:
+        - name: zookeeper
+          image: confluentinc/cp-zookeeper:7.0.1
+          ports:
+            - containerPort: 2181
+          env:
+            - name: ZOOKEEPER_CLIENT_PORT
+              value: "2181"
+            - name: ZOOKEEPER_SERVER_ID
+              value: "1"
+          volumeMounts:
+            - name: zookeeper-data
+              mountPath: /var/lib/zookeeper
+  volumeClaimTemplates:
+    - metadata:
+        name: zookeeper-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
