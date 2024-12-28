@@ -352,7 +352,7 @@ def operazioni(stub):
 def main():
     # Genera i metadati una sola volta
 
-    with grpc.insecure_channel('localhost:50052') as channel:
+    with grpc.insecure_channel('localhost:30052') as channel:
         stub = service_pb2_grpc.EchoServiceStub(channel)
         reg_login(stub)
 

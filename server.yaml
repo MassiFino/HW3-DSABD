@@ -31,7 +31,8 @@ spec:
     spec:
       containers:
       - name: server
-        image: server:latest
+        image: docker.io/library/homework1-server:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 50052
         env:
