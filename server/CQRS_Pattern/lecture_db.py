@@ -27,7 +27,7 @@ class ReadService:
             ticker= cursor.fetchall()
             if not ticker:
                raise Exception(f"L'utente {email} non ha alcun ticker da visualizzare")
-            tickers_list = "\n".join([row[0] for row in ticker])
+            tickers_list = "\n".join([f"Ticker: {row[0]}, Max: {row[1]}, Min: {row[2]}" for row in ticker])
             return tickers_list
         finally:
            conn.close()

@@ -222,6 +222,39 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
             )
             return response
     #Read
+
+
+    #Write 
+    #metodo per modificare il valore minimo e massimo di un ticker
+    def UpdateMinMaxValue(self, request, context):
+        # Crea il comando per l'aggiornamento
+        cmd = command_db.UpdateMinMaxValueCommand(
+        email=identifier,
+        ticker=request.ticker,
+        max_value=request.max_value,
+        min_value=request.min_value
+        )
+        write_service = command_db.WriteService()
+        try:
+            # Tenta di eseguire la logica di scrittura
+            write_service.handle_update_min_max_value(cmd)
+            response = service_pb2.UpdateMinMaxValueReply(
+            success=True,
+            message=f"Valori aggiornati con successo per il ticker {request.ticker}!",
+            ticker=request.ticker
+        )
+            return response
+        except Exception as e:
+        # Se c'è stata un'eccezione, significa che c'è un problema di connessione
+        # o l'utente esiste già nel DB, o altre cause.
+            response = service_pb2.UpdateMinMaxValueReply(
+                success=False,
+                message=str(e),
+                ticker=""
+            )
+            return response
+        
+        
     def ShowTickersUser(self, request, context):
         read_service=lecture_db.ReadService()
         try:
