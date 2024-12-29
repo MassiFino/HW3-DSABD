@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: data-collector-service
+  name: telegram-bot-service
 spec:
   selector:
-    app: data-collector
+    app: telegram-bot
   type: ClusterIP
   ports:
     - name: grpc
@@ -15,20 +15,20 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: data-collector-deployment
+  name: telegram-bot-deployment
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: data-collector
+      app: telegram-bot
   template:
     metadata:
       labels:
-        app: data-collector
+        app: telegram-bot
     spec:
       containers:
-      - name: data-collector
-        image: data-collector:latest
+      - name: telegram-bot
+        image: telegram-bot:latest
         ports:
         - containerPort: 50052
         env:
@@ -42,5 +42,5 @@ spec:
           value: "yfinance_db"
         - name: DATABASE_PORT
           value: "3306"
-        - name: KAFKA_BROKER
-          value: "kafka-service:9092"  # Collegamento a Kafka
+        - name: BOT_TOKEN
+          value: "7587852566:AAH0pXlB_VHM-UW1BZwhed5A9WzQnvLd5y8"  # Token del bot
