@@ -1,2 +1,2 @@
 mysql-connector-python
-confluent-kafka
+confluent-kafka==1.9.2

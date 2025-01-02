@@ -7,9 +7,10 @@ spec:
     app: telegram-bot
   type: ClusterIP
   ports:
-    - name: grpc
-      port: 50052
-      targetPort: 50052
+    - port: 50053
+      targetPort: 50053
+      # (opzionale) name: telegram-bot  # Puoi dare un nome alla porta se vuoi
+
 
 ---
 apiVersion: apps/v1
@@ -29,8 +30,9 @@ spec:
       containers:
       - name: telegram-bot
         image: telegram-bot:latest
+        imagePullPolicy: Never
         ports:
-        - containerPort: 50052
+        - containerPort: 50053
         env:
         - name: DATABASE_HOST
           value: "mysql-service"  # Collegamento al servizio MySQL

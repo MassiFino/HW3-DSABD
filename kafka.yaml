@@ -51,8 +51,8 @@ spec:
   selector:
     matchLabels:
       app: kafka
-  strategy:
-    type: Recreate
+  updateStrategy:
+    type: RollingUpdate
   template:
     metadata:
       labels:
@@ -72,8 +72,8 @@ spec:
             - containerPort: 29092  # interno
             - containerPort: 9092   # esterno
           env:
-            - name: JMX_PORT
-              value: "9010"
+            - name: KAFKA_JMX_PORT
+              value: "9999"  # Cambia la porta JMX a 9999
             - name: KAFKA_ADVERTISED_LISTENERS
               value: "INTERNAL://kafka:29092,LISTENER_EXTERNAL://kafka:9092"
             - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
@@ -88,12 +88,16 @@ spec:
               value: "INTERNAL://:29092,LISTENER_EXTERNAL://:9092"
             - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
               value: "INTERNAL:PLAINTEXT,LISTENER_EXTERNAL:PLAINTEXT"
+            - name: KAFKA_LOG_MESSAGE_FORMAT_VERSION
+              value: "3.0-IV1"  # (corrispondente a Kafka 3.0.x)
+            - name: KAFKA_INTER_BROKER_PROTOCOL_VERSION
+              value: "3.0"  # (corrispondente a Kafka 3.0.x)
             - name: KAFKA_NUM_PARTITIONS
               value: "1"
             - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
               value: "1"
             - name: KAFKA_LOG_CLEANUP_POLICY
-              value: "compact"
+              value: "compact" #richiede l'uso della chiave(se fosse delete, non sarebbe necessario)
             - name: KAFKA_ZOOKEEPER_CONNECT
               value: "zookeeper:2181"
           volumeMounts:

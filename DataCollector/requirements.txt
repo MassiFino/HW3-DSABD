@@ -1,5 +1,5 @@
 mysql-connector-python
 yfinance
-confluent-kafka
+confluent-kafka==1.9.2
 
 

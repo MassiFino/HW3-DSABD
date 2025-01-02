@@ -7,9 +7,9 @@ spec:
     app: data-collector
   type: ClusterIP
   ports:
-    - name: grpc
-      port: 50052
-      targetPort: 50052
+    - port: 50055
+      targetPort: 50055
+      
 
 ---
 apiVersion: apps/v1
@@ -25,15 +25,17 @@ spec:
     metadata:
       labels:
         app: data-collector
+        network/kafka-network: "true"
     spec:
       containers:
       - name: data-collector
         image: data-collector:latest
+        imagePullPolicy: Never
         ports:
-        - containerPort: 50052
+        - containerPort: 50055
         env:
         - name: DATABASE_HOST
-          value: "mysql-service"  # Collegamento al servizio MySQL
+          value: "mysql-service"
         - name: DATABASE_USER
           value: "root"
         - name: DATABASE_PASSWORD
@@ -43,4 +45,6 @@ spec:
         - name: DATABASE_PORT
           value: "3306"
         - name: KAFKA_BROKER
-          value: "kafka-service:9092"  # Collegamento a Kafka
+          value: "kafka:29092"
+        - name: KAFKA_TOPIC
+          value: "to-alert-system"

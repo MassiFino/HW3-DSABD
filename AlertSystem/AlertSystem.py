@@ -2,19 +2,27 @@ from datetime import datetime
 from confluent_kafka import Consumer, Producer, KafkaException
 import json
 import CQRS_Pattern.lecture_db as lecture_db
+import logging
+import os
 
+# Configurazione del logging
+logging.basicConfig(
+    level=logging.DEBUG,  # Puoi modificare il livello secondo necessità
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 # Kafka configuration for consumer and producer
 consumer_config = {
-    'bootstrap.servers': 'broker1:9092',
+    'bootstrap.servers': os.getenv('KAFKA_BROKER', 'kafka:29092'),
     'group.id': 'group1',  # Cambia il group.id per differenziare i consumatori se necessario
     'enable.auto.commit': False,
     'auto.offset.reset': 'earliest',  # Parte dal primo messaggio se non c'è offset salvato
 }
 
-
 producer_config = {
-    'bootstrap.servers': 'broker1:9092',  # Tre broker Kafka
+    'bootstrap.servers': os.getenv('KAFKA_BROKER', 'kafka:29092'),  # Usa lo stesso broker
     'acks': 'all',  # Ensure all in-sync replicas acknowledge the message
     'max.in.flight.requests.per.connection': 1,  # Ensure ordering of messages
     'retries': 3  # Number of retries for failed messages
@@ -37,11 +45,15 @@ consumer.subscribe([topic1])
 
 def produce_sync(producer, topic, value):
     try:
-        producer.produce(topic, value)
+        producer.produce(
+            topic=topic,
+            key="static_key",  # la key
+            value=value
+        )
         producer.flush()  
-        print(f"Synchronously produced message to {topic}: {value}")
+        logger.debug(f"Synchronously produced message to {topic}: {value}")
     except Exception as e:
-        print(f"Failed to produce message: {e}")
+        logger.error(f"Failed to produce message: {e}")
 
     
 
@@ -52,21 +64,21 @@ try:
 
         if msg is None:
             # Nessun messaggio disponibile, riprova
-            print("Nessun messaggio ricevuto. Continuo ad aspettare...")
+            logger.debug("Nessun messaggio ricevuto. Continuo ad aspettare...")
             continue  
 
         if msg.error():
             # Gestisce eventuali errori durante il consumo
             if msg.error().code() == KafkaException._PARTITION_EOF:
-                print(f"Fine della partizione raggiunta {msg.topic()} [{msg.partition()}]")
+                logger.info(f"Fine della partizione raggiunta {msg.topic()} [{msg.partition()}]")
             else:
-                print(f"Errore del consumer: {msg.error()}")
+                logger.error(f"Errore del consumer: {msg.error()}")
             continue  # Salta al prossimo ciclo
 
         try:
             # Decodifica il messaggio
             data = json.loads(msg.value().decode('utf-8'))
-            print(f"Received: {data}")
+            logger.info(f"Received: {data}")
 
             # Esegue la query per ottenere i valori da notificare
             read_service = lecture_db.ReadService()
@@ -89,28 +101,27 @@ try:
                 }
                 values.append(messaggio)
             
-            print(values)
+            logger.debug(f"Values to produce: {values}")
 
             # Produce il messaggio su Kafka
             produce_sync(producer, topic2, json.dumps(values))
 
             # Commit dell'offset
             consumer.commit(asynchronous=False)
-            print(f"Committed offset for message: {msg.offset()}")
+            logger.debug(f"Committed offset for message: {msg.offset()}")
 
             values = []  # Resetta la lista dei messaggi
 
         except Exception as e:
             # Gestisce eventuali eccezioni durante l'elaborazione
-            print(f"Errore durante l'elaborazione del messaggio: {e}")
-
+            logger.error(f"Errore durante l'elaborazione del messaggio: {e}")
 except KeyboardInterrupt:
     # Permette l'interruzione manuale con Ctrl+C
-    print("\nInterruzione manuale ricevuta. Chiudo il consumer.")
+    logger.info("\nInterruzione manuale ricevuta. Chiudo il consumer.")
 
 finally:
     # Chiusura pulita del consumer
     consumer.close()
-    print("Consumer chiuso correttamente.")
+    logger.info("Consumer chiuso correttamente.")
 
 

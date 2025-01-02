@@ -1,18 +1,17 @@
-from confluent_kafka import Consumer, KafkaException
+from confluent_kafka import Consumer, KafkaException, KafkaError
 import json
 import smtplib
 from email.mime.text import MIMEText
 import requests
+import os
 
 bot_token = "7587852566:AAH0pXlB_VHM-UW1BZwhed5A9WzQnvLd5y8"  # Token del bot
 chat_id = "324775130"  # Usa il tuo chat_id qui 
 app_password = 'hymj pfrc fzha zetl'
 
-
-# Kafka configuration for consumer
 consumer_config = {
-    'bootstrap.servers': 'broker1:9092',
-    'group.id': 'group2',
+    'bootstrap.servers': os.getenv('KAFKA_BROKER', 'kafka:29092'),
+    'group.id': 'group2',  # Cambia il group.id per differenziare i consumatori se necessario
     'enable.auto.commit': False,
     'auto.offset.reset': 'earliest',  # Parte dal primo messaggio se non c'è offset salvato
 }
@@ -71,7 +70,7 @@ try:
             continue
         if msg.error():
             # Gestione di errori durante il consumo
-            if msg.error().code() == KafkaException._PARTITION_EOF:
+            if msg.error().code() == KafkaError._PARTITION_EOF:
                 print(f"Fine della partizione raggiunta: {msg.topic()} [{msg.partition()}]")
             else:
                 print(f"Errore del consumer: {msg.error()}")
