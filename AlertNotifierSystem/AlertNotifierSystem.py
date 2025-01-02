@@ -1,9 +1,12 @@
+from prometheus_client import start_http_server, Counter, Gauge, generate_latest
+import time
 from confluent_kafka import Consumer, KafkaException, KafkaError
 import json
 import smtplib
 from email.mime.text import MIMEText
 import requests
 import os
+
 
 bot_token = "7587852566:AAH0pXlB_VHM-UW1BZwhed5A9WzQnvLd5y8"  # Token del bot
 chat_id = "324775130"  # Usa il tuo chat_id qui 
@@ -60,6 +63,9 @@ received_messages = []  # Buffer per memorizzare i messaggi in arrivo
 
 # Sottoscrivi il consumer al topic desiderato
 consumer.subscribe([topic_to_consume])
+
+# Avvia il server HTTP per esporre le metriche Prometheus
+start_http_server(8000)  # Esempio di porta esposta per Prometheus
 
 try:
     while True:
