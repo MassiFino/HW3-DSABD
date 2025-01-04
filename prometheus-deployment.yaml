@@ -1,4 +1,48 @@
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+rules:
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - nodes/proxy
+      - services
+      - endpoints
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups: ["extensions"]
+    resources:
+      - ingresses
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: default
+---
+
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: prometheus-config
@@ -11,8 +55,8 @@ data:
       evaluation_interval: 30s  # Intervallo di valutazione globale
       external_labels:
         monitor: 'DSBD'
-    rule_files:
-      - 'alert.rules'
+    #rule_files:
+    #  - 'alert.rules'
     scrape_configs:
       # Job per Prometheus stesso
       - job_name: 'prometheus'
@@ -26,6 +70,8 @@ data:
       - job_name: 'alert-notifier'
         scrape_interval: 30s
         metrics_path: '/metrics'
+        static_configs:
+          - targets: ['alert-notifier-service:50056']  # L'endpoint di alert-notifier
         kubernetes_sd_configs:
           - role: service
         relabel_configs:
@@ -36,6 +82,7 @@ data:
             target_label: service
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
+
       # Job per data-collector
       - job_name: 'data-collector'
         scrape_interval: 30s
@@ -50,10 +97,28 @@ data:
             target_label: service
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
+
+      # Job per alert-system
+      - job_name: 'alert-system'
+        scrape_interval: 30s
+        metrics_path: '/metrics'
+        kubernetes_sd_configs:
+          - role: service
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_label_app]
+            action: keep
+            regex: alert-system
+          - source_labels: [__meta_kubernetes_service_name]
+            target_label: service
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
       # Job per server
       - job_name: 'server'
         scrape_interval: 30s
         metrics_path: '/metrics'
+        static_configs:
+          - targets: ['server-service:50052']  # L'endpoint di server
         kubernetes_sd_configs:
           - role: service
         relabel_configs:
@@ -64,10 +129,13 @@ data:
             target_label: service
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
+
       # Job per telegram-bot
       - job_name: 'telegram-bot'
         scrape_interval: 30s
         metrics_path: '/metrics'
+        static_configs:
+          - targets: ['telegram-bot-service:50053']  # L'endpoint di telegram-bot
         kubernetes_sd_configs:
           - role: service
         relabel_configs:
@@ -78,6 +146,7 @@ data:
             target_label: service
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
+
       # Job per Kafka
       - job_name: 'kafka'
         scrape_interval: 30s
@@ -92,6 +161,7 @@ data:
             target_label: service
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
+            
             
 ---
 apiVersion: apps/v1
@@ -110,6 +180,7 @@ spec:
       labels:
         app: prometheus
     spec:
+      serviceAccountName: prometheus
       containers:
         - name: prometheus
           image: prom/prometheus

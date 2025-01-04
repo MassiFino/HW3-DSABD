@@ -10,12 +10,17 @@ import CQRS_Pattern.lecture_db as lecture_db
 import CQRS_Pattern.command_db as command_db
 import logging
 
+from prometheus_client import start_http_server, Counter, Gauge
+
 # Configurazione di base del logging
 logging.basicConfig(
     level=logging.DEBUG,  # Imposta il livello minimo di log (DEBUG, INFO, WARNING, ERROR, CRITICAL)
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',  # Formato dei log
     datefmt='%Y-%m-%d %H:%M:%S'  # Formato della data
 )
+
+SERVICE_NAME = os.getenv("SERVICE_NAME", "data-collector")
+NODE_NAME = os.getenv("NODE_NAME", "unknown")
 
 # Creazione di un logger specifico per questo modulo
 logger = logging.getLogger(__name__)
@@ -32,6 +37,19 @@ producer_config = {
 
 producer = Producer(producer_config)
 topic = os.getenv('KAFKA_TOPIC', 'to-alert-system')
+
+
+PROCESSED_TICKERS = Counter(
+    'data_collector_tickers_total',
+    'Numero totale di ticker processati dal data-collector',
+    ['service', 'node']
+)
+# GAUGE: durata dell'ultima esecuzione completa della funzione run()
+LAST_RUN_DURATION = Gauge(
+    'data_collector_run_duration_seconds',
+    'Durata (in secondi) dell\'ultima esecuzione di run()',
+    ['service', 'node']
+)
 
 def get_tickers():
     """
@@ -136,24 +154,33 @@ def run():
     - Per ogni ticker, scarica i dati.
     - Salva i dati nel database.
     """
+    start_time = time.time()
+
     try:
         tickers = get_tickers()
         if not tickers:
-            logger.info("Nessun dato da processare.")
-            return
-
-        for ticker in tickers:
-            process_ticker(ticker)
+            logger.info("Nessun ticker da processare.")
+        else:
+            for ticker in tickers:
+                # Incremento del contatore per ogni ticker elaborato
+                PROCESSED_TICKERS.labels(service=SERVICE_NAME, node=NODE_NAME).inc()
+                process_ticker(ticker)
 
         logger.info("Aggiornamento completato.")
+        produce_async(producer, topic)
 
     except Exception as e:
         logger.error(f"Errore generale durante l'esecuzione: {e}")
+    finally:
+        # Calcolo il tempo di esecuzione di run() e lo salvo su GAUGE
+        duration = time.time() - start_time
+        LAST_RUN_DURATION.labels(service=SERVICE_NAME, node=NODE_NAME).set(duration)
 
-    produce_async(producer, topic)
 
 if __name__ == "__main__":
     logger.info("Avvio del programma per l'aggiornamento dei ticker ogni 5 minuti.")
+
+    start_http_server(port=50055)
     while True:
         run()
         logger.info("Attesa di 5 minuti prima del prossimo aggiornamento.")

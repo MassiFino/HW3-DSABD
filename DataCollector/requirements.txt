@@ -1,5 +1,6 @@
 mysql-connector-python
 yfinance
 confluent-kafka==1.9.2
+prometheus_client
 
 
