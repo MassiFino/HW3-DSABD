@@ -41,3 +41,7 @@ spec:
             value: "to-alert-system"  # Topic da cui consumare
           - name: KAFKA_PRODUCER_TOPIC
             value: "to-notifier"        # Topic su cui produrre
+          - name: SERVICE_NAME
+            value: "alert-system"
+          - name: NODE_NAME
+            value: "worker"

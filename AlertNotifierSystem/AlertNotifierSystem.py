@@ -1,16 +1,35 @@
-from prometheus_client import start_http_server, Counter, Gauge, generate_latest
-import time
 from confluent_kafka import Consumer, KafkaException, KafkaError
 import json
 import smtplib
 from email.mime.text import MIMEText
 import requests
+from prometheus_client import start_http_server, Counter, Gauge
 import os
-
 
 bot_token = "7587852566:AAH0pXlB_VHM-UW1BZwhed5A9WzQnvLd5y8"  # Token del bot
 chat_id = "324775130"  # Usa il tuo chat_id qui 
 app_password = 'hymj pfrc fzha zetl'
+
+SERVICE_NAME = os.getenv("SERVICE_NAME", "data-collector")
+NODE_NAME = os.getenv("NODE_NAME", "unknown")
+# Metriche
+EMAIL_SENT = Counter(
+    'email_sent_total',
+    'Numero totale di email inviate con successo',
+    ['message_type', 'service', 'node_name']  # Aggiungi le label 'service' e 'node_name'
+)
+
+TELEGRAM_MESSAGE_SENT = Counter(
+    'telegram_messages_sent_total',
+    'Numero totale di messaggi Telegram inviati con successo',
+    ['message_type', 'service', 'node_name']  # Aggiungi le label 'service' e 'node_name'
+)
+# Metrica tipo Gauge per il numero di errori durante l'invio dell'email
+EMAIL_SEND_ERRORS = Gauge(
+    'email_send_errors_total', 
+    'Numero totale di errori durante l\'invio di email',
+    ['service', 'node_name']  # Aggiungi le label 'service' e 'node_name'
+)
 
 consumer_config = {
     'bootstrap.servers': os.getenv('KAFKA_BROKER', 'kafka:29092'),
@@ -34,6 +53,8 @@ def send_telegram_message(message, chat_id):
         response = requests.post(url, data=payload)
         if response.status_code == 200:
             print("Messaggio Telegram inviato con successo!")
+         # Incrementa la metrica per il messaggio Telegram inviato
+            TELEGRAM_MESSAGE_SENT.labels(message_type="alert", service=SERVICE_NAME, node_name=NODE_NAME).inc()
         else:
             print("Errore nell'invio del messaggio Telegram:", response.json())
     except Exception as e:
@@ -55,9 +76,13 @@ def send_email(to_email, subject, body):
             server.login('hwdsbd@gmail.com', app_password)  # Login con Gmail App Password
             server.send_message(msg)  # Invia il messaggio
             print(f"Email inviata con successo a: {to_email}")
+            EMAIL_SENT.labels(message_type="alert_email", service=SERVICE_NAME, node_name=NODE_NAME).inc()
+            EMAIL_SEND_ERRORS.labels(service=SERVICE_NAME, node_name=NODE_NAME).set(0)
+
     except Exception as e:
         print(f"Errore nell'invio dell'email a {to_email}: {e}")
-
+              # Incrementa la metrica per il numero di errori durante l'invio dell'email
+        EMAIL_SEND_ERRORS.labels(service=SERVICE_NAME, node_name=NODE_NAME).inc()
 # Variabili di stato per memorizzare messaggi ricevuti
 received_messages = []  # Buffer per memorizzare i messaggi in arrivo
 

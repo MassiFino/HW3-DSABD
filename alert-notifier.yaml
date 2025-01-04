@@ -2,6 +2,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: alert-notifier-service
+  labels:
+    app: alert-notifier
 spec:
   selector:
     app: alert-notifier
@@ -47,4 +49,7 @@ spec:
           value: "kafka:29092"  # Collegamento a Kafka interno
         - name: KAFKA_CONSUMER_TOPIC
           value: "to-notifier"  # Topic da cui consumare
-
+        - name: SERVICE_NAME
+          value: "alert-notifier"
+        - name: NODE_NAME
+          value: "worker"

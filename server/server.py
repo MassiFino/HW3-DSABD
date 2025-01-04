@@ -1,3 +1,4 @@
+import os
 import grpc
 from concurrent import futures
 import service_pb2, service_pb2_grpc
@@ -7,6 +8,8 @@ from threading import Lock
 from datetime import datetime
 import CQRS_Pattern.command_db as command_db
 import CQRS_Pattern.lecture_db as lecture_db
+from prometheus_client import start_http_server, Counter, Gauge
+import time 
 
 cache = {
     "request_cache": {},
@@ -16,6 +19,35 @@ cache = {
 cache_lock = Lock()
 
 identifier = None
+SERVICE_NAME = os.getenv("SERVICE_NAME", "data-collector")
+NODE_NAME = os.getenv("NODE_NAME", "unknown")
+
+# Metriche tipo Counter
+REQUEST_COUNT = Counter(
+    'grpc_requests_total', 
+    'Numero totale di richieste ricevute', 
+    ['method', 'success', 'service_name', 'node_name']
+)
+
+ERROR_COUNT = Counter(
+    'grpc_errors_total', 
+    'Numero totale di errori', 
+    ['method', 'service_name', 'node_name'] 
+)
+
+# Metriche tipo Gauge
+ACTIVE_CONNECTIONS = Gauge(
+    'grpc_active_connections', 
+    'Numero di connessioni attive',
+    ['status', 'service_name', 'node_name'] 
+)
+
+# Metrica di tipo Gauge per la durata della sessione utente
+USER_SESSION_DURATION = Gauge(
+    'grpc_user_session_duration_seconds', 
+    'Durata della sessione utente in secondi',
+    ['service_name', 'node_name'] 
+)
 
 class EchoService(service_pb2_grpc.EchoServiceServicer):
     
@@ -24,6 +56,7 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
         "Login Utente"
         read_service=lecture_db.ReadService()
         try:
+            
             global identifier
             identifier= request.email
             read_service.login_user(request.email)
@@ -32,6 +65,9 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
                 success=True, 
                 message=f"Ti stiamo reindirizzando alla pagina principale"
             )
+            # Incrementa il contatore delle richieste con successo
+            REQUEST_COUNT.labels(method='LoginUser', success='true', service_name=SERVICE_NAME, node_name=NODE_NAME).inc()
+
             return response
         except Exception as e:
         # Se c'è stata un'eccezione, significa che c'è un problema di connessione
@@ -40,7 +76,8 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
                 success=False,
                 message=str(e)
             )   
-        
+        # Se c'è un errore, incrementa il contatore degli errori
+        REQUEST_COUNT.labels(method='LoginUser', success='false', service_name=SERVICE_NAME, node_name=NODE_NAME).inc()
         return response
 
 
@@ -82,12 +119,16 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
 
             with cache_lock:
                 cache["request_cache"][userid] = response
-            
+              # Incrementa la metrica delle richieste
+            REQUEST_COUNT.labels(method='RegisterUser', success='true', service_name=SERVICE_NAME, node_name=NODE_NAME).inc()
             return response
 
         except Exception as e:
         # Se c'è stata un'eccezione, significa che c'è un problema di connessione
         # o l'utente esiste già nel DB, o altre cause.
+           # Incrementa la metrica degli errori per questo metodo
+            ERROR_COUNT.labels(method='RegisterUser', service_name=SERVICE_NAME, node_name=NODE_NAME).inc()
+           
             response = service_pb2.RegisterUserReply(
                 success=False,
                 message=str(e)
@@ -325,18 +366,30 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
         return response
 # Funzione per avviare il server
 def serve():
-    
+    # Avvia il server HTTP per Prometheus sulla porta 8000
+    start_http_server(8000)
     port = '50052'
     
     # Creazione di un server gRPC
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    service_pb2_grpc.add_EchoServiceServicer_to_server(EchoService(), server)
+    session_start_time = time.time()
 
+    service_pb2_grpc.add_EchoServiceServicer_to_server(EchoService(), server)
+    ACTIVE_CONNECTIONS.labels(status='open', service_name=SERVICE_NAME, node_name=NODE_NAME).inc()
     # Imposta l'indirizzo e la porta dove il server ascolterà
     server.add_insecure_port('[::]:' + port)
 
     print("Echo Service started, listening on " + port)
+    # Aggiungi il contatore per le connessioni attive
+    ACTIVE_CONNECTIONS.labels(status='closed', service_name=SERVICE_NAME, node_name=NODE_NAME).dec()
+
     server.start()
+     # Quando l'utente termina la sessione
+    session_end_time = time.time()
+    session_duration = session_end_time - session_start_time
+    
+    # Imposta la durata della sessione nella metrica
+    USER_SESSION_DURATION.labels(service_name=SERVICE_NAME, node_name=NODE_NAME).set(session_duration)
     server.wait_for_termination()
 
 if __name__ == '__main__':

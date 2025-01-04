@@ -2,6 +2,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: telegram-bot-service
+  labels:
+    app: telegram-bot
 spec:
   selector:
     app: telegram-bot
@@ -46,3 +48,7 @@ spec:
           value: "3306"
         - name: BOT_TOKEN
           value: "7587852566:AAH0pXlB_VHM-UW1BZwhed5A9WzQnvLd5y8"  # Token del bot
+        - name: SERVICE_NAME
+          value: "telegram-bot"
+        - name: NODE_NAME
+          value: "worker"

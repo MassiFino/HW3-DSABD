@@ -70,8 +70,6 @@ data:
       - job_name: 'alert-notifier'
         scrape_interval: 30s
         metrics_path: '/metrics'
-        static_configs:
-          - targets: ['alert-notifier-service:50056']  # L'endpoint di alert-notifier
         kubernetes_sd_configs:
           - role: service
         relabel_configs:
@@ -117,8 +115,6 @@ data:
       - job_name: 'server'
         scrape_interval: 30s
         metrics_path: '/metrics'
-        static_configs:
-          - targets: ['server-service:50052']  # L'endpoint di server
         kubernetes_sd_configs:
           - role: service
         relabel_configs:
@@ -134,29 +130,13 @@ data:
       - job_name: 'telegram-bot'
         scrape_interval: 30s
         metrics_path: '/metrics'
-        static_configs:
-          - targets: ['telegram-bot-service:50053']  # L'endpoint di telegram-bot
+  
         kubernetes_sd_configs:
           - role: service
         relabel_configs:
           - source_labels: [__meta_kubernetes_service_label_app]
             action: keep
             regex: telegram-bot
-          - source_labels: [__meta_kubernetes_service_name]
-            target_label: service
-          - source_labels: [__meta_kubernetes_pod_name]
-            target_label: pod
-
-      # Job per Kafka
-      - job_name: 'kafka'
-        scrape_interval: 30s
-        metrics_path: '/metrics'
-        static_configs:
-          - targets: ['kafka-service:9308']  # L'endpoint di Kafka (ad esempio, Kafka con JMX exporter)
-        relabel_configs:
-          - source_labels: [__meta_kubernetes_service_label_app]
-            action: keep
-            regex: kafka
           - source_labels: [__meta_kubernetes_service_name]
             target_label: service
           - source_labels: [__meta_kubernetes_pod_name]
