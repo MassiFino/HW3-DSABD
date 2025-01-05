@@ -1,3 +1,5 @@
+from asyncio import run
+from venv import logger
 from confluent_kafka import Consumer, KafkaException, KafkaError
 import json
 import smtplib
@@ -89,8 +91,6 @@ received_messages = []  # Buffer per memorizzare i messaggi in arrivo
 # Sottoscrivi il consumer al topic desiderato
 consumer.subscribe([topic_to_consume])
 
-# Avvia il server HTTP per esporre le metriche Prometheus
-start_http_server(8000)  # Esempio di porta esposta per Prometheus
 
 try:
     while True:
@@ -155,3 +155,12 @@ finally:
     # Chiudi il consumer quando l'app termina
     consumer.close()
     print("Consumer di Kafka chiuso.")
+
+
+if __name__ == "__main__":
+    # Avvia l'HTTP server su una porta specifica (es. 8000)
+    start_http_server(port=50056)
+    logger.info("Prometheus metrics server started on port 50056")
+
+    run()
+

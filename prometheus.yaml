@@ -95,7 +95,6 @@ data:
             target_label: service
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
-
       # Job per alert-system
       - job_name: 'alert-system'
         scrape_interval: 30s
@@ -110,9 +109,9 @@ data:
             target_label: service
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
-
       # Job per server
       - job_name: 'server'
+       static_configs:
         scrape_interval: 30s
         metrics_path: '/metrics'
         kubernetes_sd_configs:
@@ -130,7 +129,6 @@ data:
       - job_name: 'telegram-bot'
         scrape_interval: 30s
         metrics_path: '/metrics'
-  
         kubernetes_sd_configs:
           - role: service
         relabel_configs:
