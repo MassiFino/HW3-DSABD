@@ -22,5 +22,5 @@ nodes:
         hostPort: 9093 # port exposed on "host" machine for kafka metrics
       - containerPort: 30052 # porta del server
         hostPort: 30052
-      - containerPort: 9090 # porta di prometheus
-        hostPort: 30000
+      - containerPort: 30090 # porta del telegram-bot
+        hostPort: 30090

@@ -20,7 +20,7 @@ rules:
       - get
       - list
       - watch
-  - apiGroups: ["extensions"]
+  - apiGroups: ["networking.k8s.io"]
     resources:
       - ingresses
     verbs:
@@ -111,7 +111,6 @@ data:
             target_label: pod
       # Job per server
       - job_name: 'server'
-       static_configs:
         scrape_interval: 30s
         metrics_path: '/metrics'
         kubernetes_sd_configs:
@@ -194,4 +193,4 @@ spec:
   ports:
     - port: 9090
       targetPort: 9090
-      nodePort: 30000
+      nodePort: 30090

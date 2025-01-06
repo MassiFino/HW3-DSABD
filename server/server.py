@@ -367,7 +367,7 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
 # Funzione per avviare il server
 def serve():
     # Avvia il server HTTP per Prometheus sulla porta 8000
-    start_http_server(8000)
+    start_http_server(port=8000)
     port = '50052'
     
     # Creazione di un server gRPC

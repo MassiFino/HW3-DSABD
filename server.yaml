@@ -14,6 +14,9 @@ spec:
       port: 50052          # Porta “interna” del Service
       targetPort: 50052    # Porta del container dove l'app ascolta
       nodePort: 30052      # Porta esposta sul nodo (deve essere tra 30000 e 32767)
+    - name: prometheus
+      port: 8000           # Porta “interna” del Service per Prometheus
+      targetPort: 8000     # Porta del container dove Prometheus ascolta
 
 
 ---
@@ -37,6 +40,7 @@ spec:
         imagePullPolicy: Never
         ports:
         - containerPort: 50052
+        - containerPort: 8000
         env:
         - name: DATABASE_HOST
           value: "mysql-service"

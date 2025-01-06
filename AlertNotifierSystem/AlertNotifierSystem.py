@@ -1,4 +1,3 @@
-from asyncio import run
 from venv import logger
 from confluent_kafka import Consumer, KafkaException, KafkaError
 import json
@@ -91,70 +90,70 @@ received_messages = []  # Buffer per memorizzare i messaggi in arrivo
 # Sottoscrivi il consumer al topic desiderato
 consumer.subscribe([topic_to_consume])
 
-
-try:
-    while True:
-        # Poll per un nuovo messaggio dal topic Kafka
-        msg = consumer.poll(300.0)  # Aspetta fino a 5 minutinper un messaggio
-        if msg is None:
-            # Nessun messaggio ricevuto entro il tempo di polling
-            continue
-        if msg.error():
-            # Gestione di errori durante il consumo
-            if msg.error().code() == KafkaError._PARTITION_EOF:
-                print(f"Fine della partizione raggiunta: {msg.topic()} [{msg.partition()}]")
-            else:
-                print(f"Errore del consumer: {msg.error()}")
-            continue
-
-        # Decodifica il messaggio ricevuto (assunto JSON)
-        data = json.loads(msg.value().decode('utf-8'))
-
-        received_messages.append(data)  # Add the parsed message to the buffer
-
-        # Commette l'offset manualmente per garantire che il messaggio venga processato solo una volta
-        consumer.commit(asynchronous=False)
-        print(f"Offset commesso per il messaggio: {msg.offset()}")
-
-        # Verifica che il messaggio sia una lista di dizionari
-        if isinstance(received_messages, list):
-            for item in data:
-                # Verifica che l'elemento contenga le informazioni necessarie
-                if 'email' in item and 'ticker' in item and 'condition' in item and 'latest_value' in item:
-                    # Prepara l'email per l'utente
-                    subject = f"Alert per {item['ticker']}"
-                    body = (
-                        f"Salve,\n\n"
-                        f"Il ticker '{item['ticker']}' ha attivato la seguente condizione:\n"
-                        f"{item['condition']}\n"
-                        f"Valore più recente: {item['latest_value']}\n\n"
-                        f"Distinti saluti,\nSistema di Notifiche Alert"
-                    )
-                    # Invia l'email
-                    send_email(item['email'], subject, body)
-
-                    # Prepara e invia la notifica Telegram (se chat_id è presente)
-                    if 'chat_id' in item and item['chat_id']:
-                        telegram_message = (
-                            f"🚀 Alert: Il ticker '{item['ticker']}' ha attivato la seguente condizione:\n"
-                            f"{item['condition']}\n"
-                            f"Valore più recente: {item['latest_value']}"
-                        )
-                        send_telegram_message(telegram_message, item['chat_id'])
-
-                    received_messages = []
+def run():
+    try:
+        while True:
+            # Poll per un nuovo messaggio dal topic Kafka
+            msg = consumer.poll(300.0)  # Aspetta fino a 5 minutinper un messaggio
+            if msg is None:
+                # Nessun messaggio ricevuto entro il tempo di polling
+                continue
+            if msg.error():
+                # Gestione di errori durante il consumo
+                if msg.error().code() == KafkaError._PARTITION_EOF:
+                    print(f"Fine della partizione raggiunta: {msg.topic()} [{msg.partition()}]")
                 else:
-                    print(f"Elemento incompleto ricevuto: {item}")
-        else:
-            print("Messaggio ricevuto non è una lista. Ignorato.")
+                    print(f"Errore del consumer: {msg.error()}")
+                continue
 
-except KeyboardInterrupt:
-    # Interruzione pulita del consumer
-    print("\nConsumer interrotto dall'utente.")
-finally:
-    # Chiudi il consumer quando l'app termina
-    consumer.close()
-    print("Consumer di Kafka chiuso.")
+            # Decodifica il messaggio ricevuto (assunto JSON)
+            data = json.loads(msg.value().decode('utf-8'))
+
+            received_messages.append(data)  # Add the parsed message to the buffer
+
+            # Commette l'offset manualmente per garantire che il messaggio venga processato solo una volta
+            consumer.commit(asynchronous=False)
+            print(f"Offset commesso per il messaggio: {msg.offset()}")
+
+            # Verifica che il messaggio sia una lista di dizionari
+            if isinstance(received_messages, list):
+                for item in data:
+                    # Verifica che l'elemento contenga le informazioni necessarie
+                    if 'email' in item and 'ticker' in item and 'condition' in item and 'latest_value' in item:
+                        # Prepara l'email per l'utente
+                        subject = f"Alert per {item['ticker']}"
+                        body = (
+                            f"Salve,\n\n"
+                            f"Il ticker '{item['ticker']}' ha attivato la seguente condizione:\n"
+                            f"{item['condition']}\n"
+                            f"Valore più recente: {item['latest_value']}\n\n"
+                            f"Distinti saluti,\nSistema di Notifiche Alert"
+                        )
+                        # Invia l'email
+                        send_email(item['email'], subject, body)
+
+                        # Prepara e invia la notifica Telegram (se chat_id è presente)
+                        if 'chat_id' in item and item['chat_id']:
+                            telegram_message = (
+                                f"🚀 Alert: Il ticker '{item['ticker']}' ha attivato la seguente condizione:\n"
+                                f"{item['condition']}\n"
+                                f"Valore più recente: {item['latest_value']}"
+                            )
+                            send_telegram_message(telegram_message, item['chat_id'])
+
+                        received_messages = []
+                    else:
+                        print(f"Elemento incompleto ricevuto: {item}")
+            else:
+                print("Messaggio ricevuto non è una lista. Ignorato.")
+
+    except KeyboardInterrupt:
+        # Interruzione pulita del consumer
+        print("\nConsumer interrotto dall'utente.")
+    finally:
+        # Chiudi il consumer quando l'app termina
+        consumer.close()
+        print("Consumer di Kafka chiuso.")
 
 
 if __name__ == "__main__":

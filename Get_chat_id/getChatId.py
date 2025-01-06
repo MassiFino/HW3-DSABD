@@ -1,4 +1,3 @@
-from asyncio import run
 from venv import logger
 import requests
 import mysql.connector
@@ -110,10 +109,8 @@ def get_updates_and_process():
 
 if __name__ == "__main__":
     print("Avvio del bot Telegram per monitorare aggiornamenti...")
-    get_updates_and_process()
-    # Avvia l'HTTP server su una porta specifica (es. 8000)
+
     start_http_server(port=50053)
     logger.info("Prometheus metrics server started on port 50054")
-
-    run()
-
+    
+    get_updates_and_process()
