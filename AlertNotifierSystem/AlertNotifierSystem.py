@@ -85,12 +85,13 @@ def send_email(to_email, subject, body):
               # Incrementa la metrica per il numero di errori durante l'invio dell'email
         EMAIL_SEND_ERRORS.labels(service=SERVICE_NAME, node_name=NODE_NAME).inc()
 # Variabili di stato per memorizzare messaggi ricevuti
-received_messages = []  # Buffer per memorizzare i messaggi in arrivo
-
 # Sottoscrivi il consumer al topic desiderato
 consumer.subscribe([topic_to_consume])
 
 def run():
+
+    received_messages = []  # Buffer per memorizzare i messaggi in arrivo
+
     try:
         while True:
             # Poll per un nuovo messaggio dal topic Kafka

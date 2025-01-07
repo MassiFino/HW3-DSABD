@@ -61,8 +61,6 @@ DB_QUERY_LATENCY = Histogram(
     'Tempo impiegato per eseguire una query al database'
 )
 
-values = []
-
 
 consumer = Consumer(consumer_config)
 producer = Producer(producer_config)
@@ -89,6 +87,8 @@ def produce_sync(producer, topic, value):
 
 
 def run() :
+
+    values = []
 
     try:
         while True:
