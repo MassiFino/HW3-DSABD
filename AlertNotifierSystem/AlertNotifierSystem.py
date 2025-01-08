@@ -9,7 +9,7 @@ import os
 
 bot_token = "7587852566:AAH0pXlB_VHM-UW1BZwhed5A9WzQnvLd5y8"  # Token del bot
 chat_id = "324775130"  # Usa il tuo chat_id qui 
-app_password = 'hymj pfrc fzha zetl'
+app_password = 'tfcf qupn tqay lbuq'
 
 SERVICE_NAME = os.getenv("SERVICE_NAME", "data-collector")
 NODE_NAME = os.getenv("NODE_NAME", "unknown")

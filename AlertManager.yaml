@@ -31,21 +31,20 @@ data:
   alertmanager.yml: |
     global:
       resolve_timeout: 5m
-
     route:
       receiver: 'email-receiver'
       group_wait: 30s
       group_interval: 5m
-      repeat_interval: 3h
+      repeat_interval: 1h
 
     receivers:
       - name: 'email-receiver'
         email_configs:
-          - to: 'massi.fino.001@gmail.com'
+          - to: 'dariooor.00@gmail.com'
             from: 'hwdsbd@gmail.com'
             smarthost: 'smtp.gmail.com:587'
             auth_username: 'hwdsbd@gmail.com'
-            auth_password: 'hymj pfrc fzha zetl'
+            auth_password: 'tfcf qupn tqay lbuq'
             auth_identity: 'hwdsbd@gmail.com'
 
 ---
