@@ -64,6 +64,17 @@ data:
       - /etc/prometheus/alert.rules
       
     scrape_configs:
+      - job_name: 'node-exporter'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - default
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_label_app]
+            action: keep
+            regex: node-exporter
+            
       # Job per Prometheus stesso
       - job_name: 'prometheus'
         scrape_interval: 25s
