@@ -55,8 +55,14 @@ data:
       evaluation_interval: 30s  # Intervallo di valutazione globale
       external_labels:
         monitor: 'DSBD'
-    #rule_files:
-    #  - 'alert.rules'
+    alerting:
+      alertmanagers:
+      - static_configs:
+        - targets:
+          - "alertmanager-service:9093"
+    rule_files:
+      - /etc/prometheus/alert.rules
+      
     scrape_configs:
       # Job per Prometheus stesso
       - job_name: 'prometheus'
@@ -95,6 +101,7 @@ data:
             target_label: service
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
+
       # Job per alert-system
       - job_name: 'alert-system'
         scrape_interval: 30s
@@ -109,6 +116,7 @@ data:
             target_label: service
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
+
       # Job per server
       - job_name: 'server'
         scrape_interval: 30s
@@ -138,8 +146,65 @@ data:
             target_label: service
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
-            
-            
+                      
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  labels:
+    app: prometheus
+  namespace: default
+data:
+  alert.rules: |
+    groups:
+    - name: prometheus-alerts
+      rules:
+      - alert: service_down  
+        expr: up == 0        
+        for: 30s             
+        labels:               
+          severity: page      
+        annotations:          
+          summary: "Instance {{ $labels.instance }} down"
+          description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 30 seconds."
+
+      - alert: high_load
+        expr: node_load1 > 0.8
+        for: 30s
+        labels:
+          severity: page
+        annotations:
+          summary: "Instance {{ $labels.instance }} under high load"
+          description: "{{ $labels.instance }} of job {{ $labels.job }} is under high load."
+
+      - alert: site_down
+        expr: probe_success < 1
+        for: 30s
+        labels:
+          severity: page
+        annotations:
+          summary: "Site Down: {{$labels.instance}}"
+          description: "Site Down: {{$labels.instance}} for more than 30 seconds"
+
+      - alert: HighRequestDuration
+        expr: histogram_quantile(0.8, rate(request_duration_seconds_bucket[10m])) > 2
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High request duration for service: {{ $labels.service }}, method: {{ $labels.method }}."
+          description: "The 80th percentile of request duration for method {{ $labels.method }} has exceeded 2 seconds over the last 10 minutes for the service running on node: {{ $labels.node }}."
+      
+      - alert: TestAlert
+        expr: vector(1) > 0
+        for: 30s
+        labels:
+          severity: page
+        annotations:
+          summary: "This is a test alert"
+          description: "This is a test alert for testing purposes"
+
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -168,16 +233,26 @@ spec:
             - containerPort: 9090
           volumeMounts:
             - name: prometheus-config
-              mountPath: /etc/prometheus/
-            - name: prometheus-storage-volume
+              mountPath: /etc/prometheus/prometheus.yml
+              subPath: prometheus.yml
+            - name: prometheus-rules
+              mountPath: /etc/prometheus/alert.rules
+              subPath: alert.rules
+            - name: prometheus-storage
               mountPath: /prometheus/
       volumes:
         - name: prometheus-config
           configMap:
-            defaultMode: 420
             name: prometheus-config
-        - name: prometheus-storage-volume
-          emptyDir: {}
+        - name: prometheus-rules
+          configMap:
+            name: prometheus-rules
+            items:
+              - key: alert.rules
+                path: alert.rules
+        - name: prometheus-storage
+          persistentVolumeClaim:
+            claimName: prometheus-pvc
 ---
 apiVersion: v1
 kind: Service
@@ -194,3 +269,17 @@ spec:
     - port: 9090
       targetPort: 9090
       nodePort: 30090
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-pvc
+  namespace: default
+  labels:
+    app: prometheus
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
