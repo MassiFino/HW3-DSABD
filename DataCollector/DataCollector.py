@@ -10,17 +10,17 @@ import CQRS_Pattern.lecture_db as lecture_db
 import CQRS_Pattern.command_db as command_db
 import logging
 
-from prometheus_client import start_http_server, Counter, Gauge
+from prometheus_client import start_http_server, Counter, Gauge,Histogram
 
 # Configurazione di base del logging
 logging.basicConfig(
-    level=logging.DEBUG,  # Imposta il livello minimo di log (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    level=logging.DEBUG, 
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',  # Formato dei log
     datefmt='%Y-%m-%d %H:%M:%S'  # Formato della data
 )
 
 SERVICE_NAME = os.getenv("SERVICE_NAME", "data-collector")
-NODE_NAME = os.getenv("NODE_NAME", "unknown")
+NODE_NAME = os.getenv("NODE_NAME", "worker")
 
 # Creazione di un logger specifico per questo modulo
 logger = logging.getLogger(__name__)
@@ -38,18 +38,32 @@ producer_config = {
 producer = Producer(producer_config)
 topic = os.getenv('KAFKA_TOPIC', 'to-alert-system')
 
-
+# Metrica tipo Counter: conta il numero totale di ticker processati
 PROCESSED_TICKERS = Counter(
     'data_collector_tickers_total',
     'Numero totale di ticker processati dal data-collector',
     ['service', 'node']
 )
-# GAUGE: durata dell'ultima esecuzione completa della funzione run()
+# Metrica tipo Counter: conta il numero totale di errori nell'elaborazione dei ticker
+TICKER_PROCESSING_ERRORS = Counter(
+    'data_collector_ticker_processing_errors_total',  # Nome della metrica
+    'Numero totale di errori nell\'elaborazione dei ticker',  # Descrizione della metrica
+    ['service', 'node']  # Etichette per segmentare i dati (es. nome del servizio, nodo specifico)
+)
+
+# Metrica tipo GAUGE: durata dell'ultima esecuzione completa della funzione run()
 LAST_RUN_DURATION = Gauge(
     'data_collector_run_duration_seconds',
     'Durata (in secondi) dell\'ultima esecuzione di run()',
     ['service', 'node']
 )
+
+# Metrica tipo Histogram: durata dell'elaborazione dei ticker
+TICKER_PROCESSING_DURATION = Histogram(
+    'data_collector_ticker_processing_duration_seconds',
+    'Durata in secondi dell\'elaborazione di un ticker',
+    ['service', 'node']  
+) 
 
 def get_tickers():
     """
@@ -112,6 +126,8 @@ def process_ticker(ticker):
     Processa un singolo ticker per un utente.
     :param ticker: Codice del titolo azionario.
     """
+    start_time = time.time()  # Avvia il timer
+
     try:
         stock_price = get_stock_price(ticker)
         timestamp = datetime.now()
@@ -119,6 +135,11 @@ def process_ticker(ticker):
         logger.debug(f"Dati salvati per {ticker}: {stock_price} @ {timestamp}")
     except Exception as e:
         logger.error(f"Elaborazione fallita per {ticker}: {e}")
+        TICKER_PROCESSING_ERRORS.labels(service=SERVICE_NAME, node=NODE_NAME).inc()  # Incremente l'errore
+
+     # Calcola la durata e la registra nel contatore
+    duration = time.time() - start_time  # Calcola la durata
+    TICKER_PROCESSING_DURATION.labels(service=SERVICE_NAME, node=NODE_NAME).observe(duration)  # Registra la durata nel histogram
 
 def delivery_report(err, msg):
     """Callback to report the result of message delivery."""

@@ -8,7 +8,7 @@ from threading import Lock
 from datetime import datetime
 import CQRS_Pattern.command_db as command_db
 import CQRS_Pattern.lecture_db as lecture_db
-from prometheus_client import start_http_server, Counter, Gauge
+from prometheus_client import start_http_server, Counter, Gauge, Histogram
 import time 
 
 cache = {
@@ -22,31 +22,39 @@ identifier = None
 SERVICE_NAME = os.getenv("SERVICE_NAME", "data-collector")
 NODE_NAME = os.getenv("NODE_NAME", "unknown")
 
-# Metriche tipo Counter
+# Metrica tipo Counter per contare il numero totale di richieste gRPC ricevute
 REQUEST_COUNT = Counter(
     'grpc_requests_total', 
     'Numero totale di richieste ricevute', 
-    ['method', 'success', 'service_name', 'node_name']
+    ['method', 'success', 'service', 'node']
 )
 
+# Metrica tipo Counter per contare il numero totale di errori nelle richieste gRPC
 ERROR_COUNT = Counter(
     'grpc_errors_total', 
     'Numero totale di errori', 
-    ['method', 'service_name', 'node_name'] 
+    ['method', 'service', 'node'] 
 )
 
-# Metriche tipo Gauge
+# Metrica tipo Gauge per monitorare il numero di connessioni attive al servizio gRPC
 ACTIVE_CONNECTIONS = Gauge(
     'grpc_active_connections', 
     'Numero di connessioni attive',
-    ['status', 'service_name', 'node_name'] 
+    ['status', 'service', 'node'] 
 )
 
-# Metrica di tipo Gauge per la durata della sessione utente
+# Metrica tipo Gauge per misurare la durata della sessione utente in secondi
 USER_SESSION_DURATION = Gauge(
     'grpc_user_session_duration_seconds', 
     'Durata della sessione utente in secondi',
-    ['service_name', 'node_name'] 
+    ['service', 'node'] 
+)
+
+# Metrica tipo Histogram per monitorare la durata delle richieste gRPC
+REQUEST_DURATION = Histogram(
+    'grpc_request_duration_seconds', 
+    'Durata delle richieste gRPC in secondi',
+    ['method', 'success', 'service', 'node']
 )
 
 class EchoService(service_pb2_grpc.EchoServiceServicer):
@@ -54,6 +62,8 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
     #Read
     def LoginUser(self, request, context):
         "Login Utente"
+        # Inizia a misurare la durata
+        start_time = time.time()
         read_service=lecture_db.ReadService()
         try:
             
@@ -66,7 +76,7 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
                 message=f"Ti stiamo reindirizzando alla pagina principale"
             )
             # Incrementa il contatore delle richieste con successo
-            REQUEST_COUNT.labels(method='LoginUser', success='true', service_name=SERVICE_NAME, node_name=NODE_NAME).inc()
+            REQUEST_COUNT.labels(method='LoginUser', success='true', service=SERVICE_NAME, node=NODE_NAME).inc()
 
             return response
         except Exception as e:
@@ -77,13 +87,17 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
                 message=str(e)
             )   
         # Se c'è un errore, incrementa il contatore degli errori
-        REQUEST_COUNT.labels(method='LoginUser', success='false', service_name=SERVICE_NAME, node_name=NODE_NAME).inc()
-        return response
-
+            REQUEST_COUNT.labels(method='LoginUser', success='false', service=SERVICE_NAME, node=NODE_NAME).inc()
+            return response
+        finally:
+             # Misura la durata e la salva nel Histogram
+            duration = time.time() - start_time
+            REQUEST_DURATION.labels(method='LoginUser', success='true' if response.success else 'false', service=SERVICE_NAME, node=NODE_NAME).observe(duration)
 
     #Write
     def RegisterUser(self, request, context):
         """Metodo per registrare un utente."""
+        start_time = time.time()
         meta = dict(context.invocation_metadata())
 
         userid = meta.get('userid', 'unknown')
@@ -120,14 +134,14 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
             with cache_lock:
                 cache["request_cache"][userid] = response
               # Incrementa la metrica delle richieste
-            REQUEST_COUNT.labels(method='RegisterUser', success='true', service_name=SERVICE_NAME, node_name=NODE_NAME).inc()
+            REQUEST_COUNT.labels(method='RegisterUser', success='true', service=SERVICE_NAME, node=NODE_NAME).inc()
             return response
 
         except Exception as e:
         # Se c'è stata un'eccezione, significa che c'è un problema di connessione
         # o l'utente esiste già nel DB, o altre cause.
            # Incrementa la metrica degli errori per questo metodo
-            ERROR_COUNT.labels(method='RegisterUser', service_name=SERVICE_NAME, node_name=NODE_NAME).inc()
+            ERROR_COUNT.labels(method='RegisterUser', service=SERVICE_NAME, node=NODE_NAME).inc()
            
             response = service_pb2.RegisterUserReply(
                 success=False,
@@ -136,6 +150,10 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
             with cache_lock:
                 cache["request_cache"][userid] = response
             return response
+        finally:
+            # Misura la durata della richiesta e la registra nel histogram
+            duration = time.time() - start_time
+            REQUEST_DURATION.labels(method='RegisterUser', success='true' if response.success else 'false', service=SERVICE_NAME, node=NODE_NAME).observe(duration)
     #Write
     def UpdateUser(self, request, context):
         """Metodo per aggiornare il codice dell'azione dell'utente."""
@@ -262,7 +280,6 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
                 message=str(e)
             )
             return response
-    #Read
 
 
     #Write 
@@ -295,7 +312,7 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
             )
             return response
         
-        
+    #Read 
     def ShowTickersUser(self, request, context):
         read_service=lecture_db.ReadService()
         try:
@@ -336,11 +353,12 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
             response=service_pb2.GetLatestValueReply(
                 success=False,
                 ticker="",
-                stock_value="",
+                stock_value=0.0,
                 timestamp="",
                 message=str(e)
             )
         return response
+    
     #Read
     def GetAverageValue(self, request, context):
         read_service=lecture_db.ReadService()
@@ -360,7 +378,7 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
                 success=False, 
                 ticker=request.ticker,
                 message=str(e),
-                average_stock_value="", 
+                average_stock_value=0.0,
                 timestamp=""
             )
         return response
@@ -375,13 +393,13 @@ def serve():
     session_start_time = time.time()
 
     service_pb2_grpc.add_EchoServiceServicer_to_server(EchoService(), server)
-    ACTIVE_CONNECTIONS.labels(status='open', service_name=SERVICE_NAME, node_name=NODE_NAME).inc()
+    ACTIVE_CONNECTIONS.labels(status='open', service=SERVICE_NAME, node=NODE_NAME).inc()
     # Imposta l'indirizzo e la porta dove il server ascolterà
     server.add_insecure_port('[::]:' + port)
 
     print("Echo Service started, listening on " + port)
     # Aggiungi il contatore per le connessioni attive
-    ACTIVE_CONNECTIONS.labels(status='closed', service_name=SERVICE_NAME, node_name=NODE_NAME).dec()
+    ACTIVE_CONNECTIONS.labels(status='closed', service=SERVICE_NAME, node=NODE_NAME).dec()
 
     server.start()
      # Quando l'utente termina la sessione
@@ -389,7 +407,7 @@ def serve():
     session_duration = session_end_time - session_start_time
     
     # Imposta la durata della sessione nella metrica
-    USER_SESSION_DURATION.labels(service_name=SERVICE_NAME, node_name=NODE_NAME).set(session_duration)
+    USER_SESSION_DURATION.labels(service=SERVICE_NAME, node=NODE_NAME).set(session_duration)
     server.wait_for_termination()
 
 if __name__ == '__main__':

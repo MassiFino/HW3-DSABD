@@ -9,56 +9,64 @@ import time
 
 # Configurazione del logging
 logging.basicConfig(
-    level=logging.DEBUG,  # Puoi modificare il livello secondo necessità
+    level=logging.DEBUG,  
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 logger = logging.getLogger(__name__)
 
+SERVICE_NAME = os.getenv("SERVICE_NAME", "alert-system")
+NODE_NAME = os.getenv("NODE_NAME", "worker")
 # Kafka configuration for consumer and producer
 consumer_config = {
     'bootstrap.servers': os.getenv('KAFKA_BROKER', 'kafka:29092'),
-    'group.id': 'group1',  # Cambia il group.id per differenziare i consumatori se necessario
+    'group.id': 'group1',  
     'enable.auto.commit': False,
-    'auto.offset.reset': 'earliest',  # Parte dal primo messaggio se non c'è offset salvato
+    'auto.offset.reset': 'earliest', 
 }
 
 producer_config = {
-    'bootstrap.servers': os.getenv('KAFKA_BROKER', 'kafka:29092'),  # Usa lo stesso broker
+    'bootstrap.servers': os.getenv('KAFKA_BROKER', 'kafka:29092'), 
     'acks': 'all',  # Ensure all in-sync replicas acknowledge the message
     'max.in.flight.requests.per.connection': 1,  # Ensure ordering of messages
     'retries': 3  # Number of retries for failed messages
 }
 
 
-# Counter per il numero di messaggi consumati
+# Metrica tipo Counter per il numero di messaggi consumati
 MESSAGES_CONSUMED = Counter(
     'messages_consumed_total',
-    'Numero totale di messaggi consumati dal topic to-alert-system'
+    'Numero totale di messaggi consumati dal topic to-alert-system',
+    ['service', 'node']
 )
 
-# Counter per il numero di messaggi prodotti
+# Metrica tipo Counter per il numero di messaggi prodotti
 MESSAGES_PRODUCED = Counter(
     'messages_produced_total',
-    'Numero totale di messaggi prodotti sul topic to-notifier'
+    'Numero totale di messaggi prodotti sul topic to-notifier',
+    ['service', 'node']
 )
 
-# Gauge per il numero di messaggi in attesa
+# Metrica tipo Gauge per il numero di messaggi in attesa
 MESSAGES_PENDING = Gauge(
     'messages_pending',
-    'Numero di messaggi in attesa di essere prodotti'
+    'Numero di messaggi in attesa di essere prodotti',
+    ['service', 'node']
 )
 
-# Histogram per la durata dell'elaborazione dei messaggi
+# Metrica tipo Histogram per la durata dell'elaborazione dei messaggi
 PROCESSING_TIME = Histogram(
     'message_processing_seconds',
-    'Tempo impiegato per elaborare un messaggio'
+    'Tempo impiegato per elaborare un messaggio',
+    ['service', 'node']
+
 )
 
-# Histogram per la latency delle query al database
+# Metrica tipo Histogram per la latency delle query al database
 DB_QUERY_LATENCY = Histogram(
     'db_query_latency_seconds',
-    'Tempo impiegato per eseguire una query al database'
+    'Tempo impiegato per eseguire una query al database',
+    ['service', 'node']
 )
 
 
@@ -113,7 +121,7 @@ def run() :
                 data = json.loads(msg.value().decode('utf-8'))
                 logger.info(f"Received: {data}")
 
-                MESSAGES_CONSUMED.inc()
+                MESSAGES_CONSUMED.labels(service=SERVICE_NAME, node=NODE_NAME).inc()
                 # Esegue la query per ottenere i valori da notificare
                 read_service = lecture_db.ReadService()
 
@@ -122,7 +130,7 @@ def run() :
                 results = read_service.NotifierValues()
 
                 db_duration = time.time() - db_start_time
-                DB_QUERY_LATENCY.observe(db_duration)
+                DB_QUERY_LATENCY.labels(service=SERVICE_NAME, node=NODE_NAME).observe(db_duration)
                 
                 for row in results:
                     email = row[0]
@@ -141,27 +149,26 @@ def run() :
                     values.append(messaggio)
                 
                 logger.debug(f"Values to produce: {values}")
-                MESSAGES_PENDING.set(len(values))
+                MESSAGES_PENDING.labels(service=SERVICE_NAME, node=NODE_NAME).set(len(values))
 
                 # Calcola il tempo di elaborazione del messaggio
                 processing_start_time = time.time()
                 # Produce il messaggio su Kafka
                 produce_sync(producer, topic2, json.dumps(values))
 
-                MESSAGES_PRODUCED.inc()
+                MESSAGES_PRODUCED.labels(service=SERVICE_NAME, node=NODE_NAME).inc()
 
                 processing_duration = time.time() - processing_start_time
-                PROCESSING_TIME.observe(processing_duration)
+                PROCESSING_TIME.labels(service=SERVICE_NAME, node=NODE_NAME).observe(processing_duration)
 
 
-                # Commit dell'offset
                 # Commit dell'offset
                 consumer.commit(asynchronous=False)
 
                 logger.debug(f"Committed offset for message: {msg.offset()}")
 
                 values = []  # Resetta la lista dei messaggi
-                MESSAGES_PENDING.set(len(values))
+                MESSAGES_PENDING.labels(service=SERVICE_NAME, node=NODE_NAME).set(len(values))
 
             except Exception as e:
                 # Gestisce eventuali eccezioni durante l'elaborazione
@@ -178,7 +185,7 @@ def run() :
 
 
 if __name__ == "__main__":
-    # Avvia l'HTTP server su una porta specifica (es. 8000)
+    # Avvia l'HTTP server su una porta specifica
     start_http_server(port=50054)
     logger.info("Prometheus metrics server started on port 50054")
 

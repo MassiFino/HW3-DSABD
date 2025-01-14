@@ -6,37 +6,63 @@ from email.mime.text import MIMEText
 import requests
 from prometheus_client import start_http_server, Counter, Gauge
 import os
+import time
 
 bot_token = "7587852566:AAH0pXlB_VHM-UW1BZwhed5A9WzQnvLd5y8"  # Token del bot
-chat_id = "324775130"  # Usa il tuo chat_id qui 
+chat_id = "324775130"  # chat_id qui 
 app_password = 'tfcf qupn tqay lbuq'
 
-SERVICE_NAME = os.getenv("SERVICE_NAME", "data-collector")
-NODE_NAME = os.getenv("NODE_NAME", "unknown")
+SERVICE_NAME = os.getenv("SERVICE_NAME", "alert-notifier")
+NODE_NAME = os.getenv("NODE_NAME", "worker")
+
 # Metriche
+
+# Metrica tipo Counter per il numero totale di email inviate con successo
 EMAIL_SENT = Counter(
     'email_sent_total',
     'Numero totale di email inviate con successo',
-    ['message_type', 'service', 'node_name']  # Aggiungi le label 'service' e 'node_name'
+    ['message_type', 'service', 'node']  
 )
-
+# Metrica tipo Counter per il numero totale di messaggi Telegram inviati con successo
 TELEGRAM_MESSAGE_SENT = Counter(
     'telegram_messages_sent_total',
     'Numero totale di messaggi Telegram inviati con successo',
-    ['message_type', 'service', 'node_name']  # Aggiungi le label 'service' e 'node_name'
+    ['message_type', 'service', 'node']  
 )
-# Metrica tipo Gauge per il numero di errori durante l'invio dell'email
-EMAIL_SEND_ERRORS = Gauge(
+
+# Metrica tipo Counter per il numero totale di errori durante l'invio dell'email
+EMAIL_SEND_ERRORS = Counter(
     'email_send_errors_total', 
     'Numero totale di errori durante l\'invio di email',
-    ['service', 'node_name']  # Aggiungi le label 'service' e 'node_name'
+    ['service', 'node']  
+)
+
+# Metrica tipo Counter per il numero totale di errori durante l'invio di messaggi Telegram
+TELEGRAM_SEND_ERRORS = Counter(
+    'telegram_send_errors_total', 
+    'Numero totale di errori durante l\'invio di messaggi Telegram',
+    ['service', 'node']  # Le etichette per il servizio e il nodo
+)
+
+# Metrica tipo Gauge per la latenza dell'invio dell'email (tempo impiegato per inviarla)
+EMAIL_SEND_LATENCY = Gauge(
+    'email_send_latency_seconds',
+    'Latenza dell\'invio dell\'email',
+    ['service', 'node', 'message_type']
+)
+
+# Metrica tipo Gauge per la latenza dell'invio del messaggio Telegram (tempo impiegato per inviarlo)
+TELEGRAM_SEND_LATENCY = Gauge(
+    'telegram_send_latency_seconds',
+    'Latenza dell\'invio del messaggio Telegram',
+    ['service', 'node', 'message_type']
 )
 
 consumer_config = {
     'bootstrap.servers': os.getenv('KAFKA_BROKER', 'kafka:29092'),
-    'group.id': 'group2',  # Cambia il group.id per differenziare i consumatori se necessario
+    'group.id': 'group2',  
     'enable.auto.commit': False,
-    'auto.offset.reset': 'earliest',  # Parte dal primo messaggio se non c'è offset salvato
+    'auto.offset.reset': 'earliest',  
 }
 
 consumer = Consumer(consumer_config)  # Inizializza il Kafka consumer
@@ -45,6 +71,8 @@ topic_to_consume = 'to-notifier'  # Topic da cui leggere messaggi
 
 def send_telegram_message(message, chat_id):
     """Invia un messaggio tramite Telegram"""
+    start_time = time.time()
+
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {
         'chat_id': chat_id,
@@ -55,15 +83,22 @@ def send_telegram_message(message, chat_id):
         if response.status_code == 200:
             print("Messaggio Telegram inviato con successo!")
          # Incrementa la metrica per il messaggio Telegram inviato
-            TELEGRAM_MESSAGE_SENT.labels(message_type="alert", service=SERVICE_NAME, node_name=NODE_NAME).inc()
+            TELEGRAM_MESSAGE_SENT.labels(message_type="alert", service=SERVICE_NAME, node=NODE_NAME).inc()
+            end_time = time.time()
+            latency = end_time - start_time
+            TELEGRAM_SEND_LATENCY.labels(service=SERVICE_NAME, node=NODE_NAME, message_type="alert").set(latency)        
         else:
             print("Errore nell'invio del messaggio Telegram:", response.json())
+            TELEGRAM_SEND_ERRORS.labels(service=SERVICE_NAME, node=NODE_NAME).inc()  # Incrementa gli errori
     except Exception as e:
         print("Errore nella connessione con Telegram:", e)
-        
+        TELEGRAM_SEND_ERRORS.labels(service=SERVICE_NAME, node=NODE_NAME).inc()  # Incrementa gli errori
+
         
 # Funzione per inviare email tramite Gmail SMTP
 def send_email(to_email, subject, body):
+    start_time = time.time()
+
     try:
         # Crea il messaggio email
         msg = MIMEText(body)  # Imposta il corpo dell'email
@@ -77,15 +112,19 @@ def send_email(to_email, subject, body):
             server.login('hwdsbd@gmail.com', app_password)  # Login con Gmail App Password
             server.send_message(msg)  # Invia il messaggio
             print(f"Email inviata con successo a: {to_email}")
-            EMAIL_SENT.labels(message_type="alert_email", service=SERVICE_NAME, node_name=NODE_NAME).inc()
-            EMAIL_SEND_ERRORS.labels(service=SERVICE_NAME, node_name=NODE_NAME).set(0)
-
+            EMAIL_SENT.labels(message_type="alert_email", service=SERVICE_NAME, node=NODE_NAME).inc()
+            EMAIL_SEND_ERRORS.labels(service=SERVICE_NAME, node=NODE_NAME).set(0)
+            # Variabili di stato per memorizzare messaggi ricevuti
+            # Sottoscrivi il consumer al topic desiderato
+            end_time = time.time()
+            latency = end_time - start_time
+            EMAIL_SEND_LATENCY.labels(service=SERVICE_NAME, node=NODE_NAME, message_type="alert_email").set(latency)
     except Exception as e:
         print(f"Errore nell'invio dell'email a {to_email}: {e}")
               # Incrementa la metrica per il numero di errori durante l'invio dell'email
-        EMAIL_SEND_ERRORS.labels(service=SERVICE_NAME, node_name=NODE_NAME).inc()
-# Variabili di stato per memorizzare messaggi ricevuti
-# Sottoscrivi il consumer al topic desiderato
+        EMAIL_SEND_ERRORS.labels(service=SERVICE_NAME, node=NODE_NAME).inc()
+  
+
 consumer.subscribe([topic_to_consume])
 
 def run():
