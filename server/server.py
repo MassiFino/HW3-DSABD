@@ -19,8 +19,8 @@ cache = {
 cache_lock = Lock()
 
 identifier = None
-SERVICE_NAME = os.getenv("SERVICE_NAME", "data-collector")
-NODE_NAME = os.getenv("NODE_NAME", "unknown")
+SERVICE_NAME = os.getenv("SERVICE_NAME", "server")
+NODE_NAME = os.getenv("NODE_NAME", "worker")
 
 # Metrica tipo Counter per contare il numero totale di richieste gRPC ricevute
 REQUEST_COUNT = Counter(
