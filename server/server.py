@@ -10,6 +10,7 @@ import CQRS_Pattern.command_db as command_db
 import CQRS_Pattern.lecture_db as lecture_db
 from prometheus_client import start_http_server, Counter, Gauge, Histogram
 import time 
+import threading 
 
 cache = {
     "request_cache": {},
@@ -17,6 +18,13 @@ cache = {
 }
 
 cache_lock = Lock()
+
+# Tempo di validità di ogni entry (TTL), in secondi
+CACHE_TTL_SECONDS = 600  # 10 minuti
+
+# Intervallo di pulizia periodica (in secondi)
+CLEAN_INTERVAL = 1800  # 30 minuti
+
 
 identifier = None
 SERVICE_NAME = os.getenv("SERVICE_NAME", "server")
@@ -56,6 +64,46 @@ REQUEST_DURATION = Histogram(
     'Durata delle richieste gRPC in secondi',
     ['method', 'success', 'service', 'node']
 )
+
+
+def clean_up_cache():
+    """
+    Funzione eseguita dal thread che pulisce periodicamente
+    il contenuto della cache rimuovendo le entry scadute.
+    """
+    while True:
+        # Dorme per CLEAN_INTERVAL secondi prima di ricontrollare
+        time.sleep(CLEAN_INTERVAL)
+        
+        now = time.time()
+        with cache_lock:
+            # Pulisci request_cache
+            keys_to_remove = []
+            for key, value in cache["request_cache"].items():
+                saved_time = value.get("timestamp", 0)
+                if now - saved_time > CACHE_TTL_SECONDS:
+                    keys_to_remove.append(key)
+            for key in keys_to_remove:
+                del cache["request_cache"][key]
+            
+            # Pulisci update_cache
+            keys_to_remove = []
+            for key, value in cache["update_cache"].items():
+                saved_time = value.get("timestamp", 0)
+                if now - saved_time > CACHE_TTL_SECONDS:
+                    keys_to_remove.append(key)
+            for key in keys_to_remove:
+                del cache["update_cache"][key]
+
+def start_cleaner_thread():
+    """
+    Crea e avvia il thread che eseguirà periodicamente 'clean_up_cache()'.
+    """
+    cleaner_thread = threading.Thread(
+        target=clean_up_cache,
+        daemon=True  # In modo che si chiuda se il main thread termina
+    )
+    cleaner_thread.start()
 
 class EchoService(service_pb2_grpc.EchoServiceServicer):
     
@@ -105,9 +153,10 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
         print(f"Richiesta di registrazione da: UserID: {userid}")
 
         with cache_lock:
-            if userid in cache["request_cache"]:
+            entry = cache["request_cache"].get(userid)
+            if entry:
                 print(f"Risposta in cache per UserID {userid}")
-                return cache["request_cache"][userid]
+                return entry["data"]
         
 
         cmd = command_db.RegisterUserCommand(
@@ -132,7 +181,10 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
             )
 
             with cache_lock:
-                cache["request_cache"][userid] = response
+                cache["request_cache"][userid] = {
+                    "timestamp": time.time(),
+                    "data": response  # qui metti la tua gRPC response
+                }
               # Incrementa la metrica delle richieste
             REQUEST_COUNT.labels(method='RegisterUser', success='true', service=SERVICE_NAME, node=NODE_NAME).inc()
             return response
@@ -148,7 +200,10 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
                 message=str(e)
             )
             with cache_lock:
-                cache["request_cache"][userid] = response
+                cache["request_cache"][userid] = {
+                    "timestamp": time.time(),
+                    "data": response  # qui metti la tua gRPC response
+                }
             return response
         finally:
             # Misura la durata della richiesta e la registra nel histogram
@@ -165,9 +220,10 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
         print(f"Richiesta di aggionamento con RquestID: {requestid}")
 
         with cache_lock:
-            if requestid in cache["update_cache"]:
+            entry = cache["update_cache"].get(requestid)
+            if entry:
                 print(f"Risposta in cache per RequestID {requestid}")
-                return cache["update_cache"][requestid]
+                return entry["data"]
 
         cmd = command_db.UpdateUserCommand(
             email=identifier,
@@ -187,8 +243,10 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
             message=f"Codice dell'azione aggiornato per l'utente {identifier}!"
             )
             with cache_lock:
-                cache["update_cache"][requestid] = response
-        
+                cache["update_cache"][requestid] = {
+                    "timestamp": time.time(),
+                    "data": response
+                }        
             return response
         except Exception as e:
         # Se c'è stata un'eccezione, significa che c'è un problema di connessione
@@ -198,7 +256,10 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
                 message=str(e)
             )
             with cache_lock:
-                cache["update_cache"][requestid] = response
+                cache["update_cache"][requestid] = {
+                    "timestamp": time.time(),
+                    "data": response
+                }
         
             return response
         
@@ -402,13 +463,16 @@ def serve():
     ACTIVE_CONNECTIONS.labels(status='closed', service=SERVICE_NAME, node=NODE_NAME).dec()
 
     server.start()
-     # Quando l'utente termina la sessione
-    session_end_time = time.time()
-    session_duration = session_end_time - session_start_time
-    
-    # Imposta la durata della sessione nella metrica
-    USER_SESSION_DURATION.labels(service=SERVICE_NAME, node=NODE_NAME).set(session_duration)
-    server.wait_for_termination()
+
+    try:
+        server.wait_for_termination()
+    finally:
+        session_end_time = time.time()
+        session_duration = session_end_time - session_start_time
+        USER_SESSION_DURATION.labels(service=SERVICE_NAME, node=NODE_NAME).set(session_duration)
 
 if __name__ == '__main__':
+
+    start_cleaner_thread()
+
     serve()
