@@ -44,12 +44,6 @@ ERROR_COUNT = Counter(
     ['method', 'service', 'node'] 
 )
 
-# Metrica tipo Gauge per monitorare il numero di connessioni attive al servizio gRPC
-ACTIVE_CONNECTIONS = Gauge(
-    'grpc_active_connections', 
-    'Numero di connessioni attive',
-    ['status', 'service', 'node'] 
-)
 
 # Metrica tipo Gauge per misurare la durata della sessione utente in secondi
 USER_SESSION_DURATION = Gauge(
@@ -454,13 +448,11 @@ def serve():
     session_start_time = time.time()
 
     service_pb2_grpc.add_EchoServiceServicer_to_server(EchoService(), server)
-    ACTIVE_CONNECTIONS.labels(status='open', service=SERVICE_NAME, node=NODE_NAME).inc()
     # Imposta l'indirizzo e la porta dove il server ascolterà
     server.add_insecure_port('[::]:' + port)
 
     print("Echo Service started, listening on " + port)
     # Aggiungi il contatore per le connessioni attive
-    ACTIVE_CONNECTIONS.labels(status='closed', service=SERVICE_NAME, node=NODE_NAME).dec()
 
     server.start()
 
