@@ -1,4 +1,4 @@
-from venv import logger
+import logging
 from confluent_kafka import Consumer, KafkaException, KafkaError
 import json
 import smtplib
@@ -65,6 +65,9 @@ consumer_config = {
     'auto.offset.reset': 'earliest',  
 }
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 consumer = Consumer(consumer_config)  # Inizializza il Kafka consumer
 topic_to_consume = 'to-notifier'  # Topic da cui leggere messaggi
 # Funzione per inviare notifiche tramite Telegram
@@ -81,17 +84,17 @@ def send_telegram_message(message, chat_id):
     try:
         response = requests.post(url, data=payload)
         if response.status_code == 200:
-            print("Messaggio Telegram inviato con successo!")
+            logger.info("Messaggio Telegram inviato con successo!")
          # Incrementa la metrica per il messaggio Telegram inviato
             TELEGRAM_MESSAGE_SENT.labels(message_type="alert", service=SERVICE_NAME, node=NODE_NAME).inc()
             end_time = time.time()
             latency = end_time - start_time
             TELEGRAM_SEND_LATENCY.labels(service=SERVICE_NAME, node=NODE_NAME, message_type="alert").set(latency)        
         else:
-            print("Errore nell'invio del messaggio Telegram:", response.json())
+            logger.error("Errore nell'invio del messaggio Telegram: %s", response.json())
             TELEGRAM_SEND_ERRORS.labels(service=SERVICE_NAME, node=NODE_NAME).inc()  # Incrementa gli errori
     except Exception as e:
-        print("Errore nella connessione con Telegram:", e)
+        logger.error("Errore nella connessione con Telegram: %s", e)
         TELEGRAM_SEND_ERRORS.labels(service=SERVICE_NAME, node=NODE_NAME).inc()  # Incrementa gli errori
 
         
@@ -111,16 +114,15 @@ def send_email(to_email, subject, body):
             server.starttls()  # Avvia la connessione TLS
             server.login('hwdsbd@gmail.com', app_password)  # Login con Gmail App Password
             server.send_message(msg)  # Invia il messaggio
-            print(f"Email inviata con successo a: {to_email}")
+            logger.info("Email inviata con successo a: %s", to_email)
             EMAIL_SENT.labels(message_type="alert_email", service=SERVICE_NAME, node=NODE_NAME).inc()
-            EMAIL_SEND_ERRORS.labels(service=SERVICE_NAME, node=NODE_NAME).set(0)
             # Variabili di stato per memorizzare messaggi ricevuti
             # Sottoscrivi il consumer al topic desiderato
             end_time = time.time()
             latency = end_time - start_time
             EMAIL_SEND_LATENCY.labels(service=SERVICE_NAME, node=NODE_NAME, message_type="alert_email").set(latency)
     except Exception as e:
-        print(f"Errore nell'invio dell'email a {to_email}: {e}")
+        logger.error("Errore nell'invio dell'email a %s: %s", to_email, e)
               # Incrementa la metrica per il numero di errori durante l'invio dell'email
         EMAIL_SEND_ERRORS.labels(service=SERVICE_NAME, node=NODE_NAME).inc()
   
@@ -141,9 +143,10 @@ def run():
             if msg.error():
                 # Gestione di errori durante il consumo
                 if msg.error().code() == KafkaError._PARTITION_EOF:
-                    print(f"Fine della partizione raggiunta: {msg.topic()} [{msg.partition()}]")
+                    logger.info("Fine della partizione raggiunta: %s [%s]",
+                                msg.topic(), msg.partition())
                 else:
-                    print(f"Errore del consumer: {msg.error()}")
+                    logger.error("Errore del consumer: %s", msg.error())
                 continue
 
             # Decodifica il messaggio ricevuto (assunto JSON)
@@ -153,7 +156,7 @@ def run():
 
             # Commette l'offset manualmente per garantire che il messaggio venga processato solo una volta
             consumer.commit(asynchronous=False)
-            print(f"Offset commesso per il messaggio: {msg.offset()}")
+            logger.info("Offset commesso per il messaggio: %s", msg.offset())
 
             # Verifica che il messaggio sia una lista di dizionari
             if isinstance(received_messages, list):
@@ -183,17 +186,17 @@ def run():
 
                         received_messages = []
                     else:
-                        print(f"Elemento incompleto ricevuto: {item}")
+                        logger.warning("Elemento incompleto ricevuto: %s", item)
             else:
-                print("Messaggio ricevuto non è una lista. Ignorato.")
+                logger.warning("Messaggio ricevuto non è una lista. Ignorato.")
 
     except KeyboardInterrupt:
         # Interruzione pulita del consumer
-        print("\nConsumer interrotto dall'utente.")
+        logger.info("Consumer interrotto dall'utente.")
     finally:
         # Chiudi il consumer quando l'app termina
         consumer.close()
-        print("Consumer di Kafka chiuso.")
+        logger.info("Consumer di Kafka chiuso.")
 
 
 if __name__ == "__main__":
