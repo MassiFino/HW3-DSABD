@@ -11,6 +11,8 @@ import CQRS_Pattern.lecture_db as lecture_db
 from prometheus_client import start_http_server, Counter, Gauge, Histogram
 import time 
 import threading 
+import uuid
+
 
 cache = {
     "request_cache": {},
@@ -25,8 +27,10 @@ CACHE_TTL_SECONDS = 600  # 10 minuti
 # Intervallo di pulizia periodica (in secondi)
 CLEAN_INTERVAL = 1800  # 30 minuti
 
+SESSION_STORE = {} 
 
-identifier = None
+MAX_TOKEN_AGE_SECONDS = 86400  # 1 giorno
+
 SERVICE_NAME = os.getenv("SERVICE_NAME", "server")
 NODE_NAME = os.getenv("NODE_NAME", "worker")
 
@@ -109,13 +113,21 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
         read_service=lecture_db.ReadService()
         try:
             
-            global identifier
-            identifier= request.email
+            # Genera session_token univoco
+            token = str(uuid.uuid4())
+            
+            SESSION_STORE[token] = {
+            "email": request.email,
+            "creation_time": time.time()
+            }
+
+
             read_service.login_user(request.email)
             
             response=service_pb2.LoginUserReply(
                 success=True, 
-                message=f"Ti stiamo reindirizzando alla pagina principale"
+                message=f"Ti stiamo reindirizzando alla pagina principale",
+                session_token=token
             )
             # Incrementa il contatore delle richieste con successo
             REQUEST_COUNT.labels(method='LoginUser', success='true', service=SERVICE_NAME, node=NODE_NAME).inc()
@@ -166,12 +178,19 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
             # Tenta di eseguire la logica di scrittura
             write_service.handle_register_user(cmd)
             
-            global identifier
-            identifier = request.email
+            # Genera session_token univoco
+            token = str(uuid.uuid4())
+            
+            SESSION_STORE[token] = {
+            "email": request.email,
+            "creation_time": time.time()
+            }
+
 
             response = service_pb2.RegisterUserReply(
                 success=True, 
-                message=f"Utente {request.email} registrato con successo!"
+                message=f"Utente {request.email} registrato con successo!",
+                session_token=token
             )
 
             with cache_lock:
@@ -212,6 +231,16 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
         requestid = meta.get('requestid', 'unknown')
 
         print(f"Richiesta di aggionamento con RquestID: {requestid}")
+
+        session_token = meta.get('session_token', None)
+        if not session_token:
+            raise Exception("Manca il token. Fai login.")
+        
+        session_data = SESSION_STORE.get(session_token)
+        if not session_data:
+            raise Exception("Token non valido o vecchio e rimosso.")
+        
+        identifier = session_data["email"]
 
         with cache_lock:
             entry = cache["update_cache"].get(requestid)
@@ -259,6 +288,18 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
         
     #Write
     def DeleteTickerUser(self, request,context):
+
+        meta = dict(context.invocation_metadata())
+
+        session_token = meta.get('session_token', None)
+        if not session_token:
+            raise Exception("Manca il token. Fai login.")
+        
+        session_data = SESSION_STORE.get(session_token)
+        if not session_data:
+            raise Exception("Token non valido o vecchio e rimosso.")
+        
+        identifier = session_data["email"]
        
         cmd = command_db.DeleteTickerUserCommand(
             email=identifier,
@@ -287,6 +328,19 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
     #Write
     def DeleteUser(self,request,context):
         """Metodo per eliminare un utente."""
+
+        meta = dict(context.invocation_metadata())
+
+        session_token = meta.get('session_token', None)
+        if not session_token:
+            raise Exception("Manca il token. Fai login.")
+        
+        session_data = SESSION_STORE.get(session_token)
+        if not session_data:
+            raise Exception("Token non valido o vecchio e rimosso.")
+        
+        identifier = session_data["email"]
+
         cmd = command_db.DeleteUserCommand(
             email=identifier
            
@@ -295,6 +349,10 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
        
         try:
             write_service.handle_delete_user(cmd)
+
+            if session_token in SESSION_STORE:
+                del SESSION_STORE[session_token]
+
             response = service_pb2.DeleteUserReply(
             success=True, 
             message=f"Utente {identifier} eliminato con successo!"
@@ -310,6 +368,18 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
             return response
     #Write 
     def AddTickerUtente(self, request, context):
+
+        meta = dict(context.invocation_metadata())
+        session_token = meta.get('session_token', None)
+        if not session_token:
+            raise Exception("Manca il token. Fai login.")
+        
+        session_data = SESSION_STORE.get(session_token)
+        if not session_data:
+            raise Exception("Token non valido o vecchio e rimosso.")
+        
+        identifier = session_data["email"]
+
         cmd = command_db.AddTickerCommand(
             email=identifier,
             ticker=request.ticker,
@@ -340,6 +410,18 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
     #Write 
     #metodo per modificare il valore minimo e massimo di un ticker
     def UpdateMinMaxValue(self, request, context):
+
+        meta = dict(context.invocation_metadata())
+        session_token = meta.get('session_token', None)
+        if not session_token:
+            raise Exception("Manca il token. Fai login.")
+        
+        session_data = SESSION_STORE.get(session_token)
+        if not session_data:
+            raise Exception("Token non valido o vecchio e rimosso.")
+        
+        identifier = session_data["email"]
+
         # Crea il comando per l'aggiornamento
         cmd = command_db.UpdateMinMaxValueCommand(
         email=identifier,
@@ -370,6 +452,18 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
     #Read 
     def ShowTickersUser(self, request, context):
         read_service=lecture_db.ReadService()
+
+        meta = dict(context.invocation_metadata())
+        session_token = meta.get('session_token', None)
+        if not session_token:
+            raise Exception("Manca il token. Fai login.")
+        
+        session_data = SESSION_STORE.get(session_token)
+        if not session_data:
+            raise Exception("Token non valido o vecchio e rimosso.")
+        
+        identifier = session_data["email"]
+
         try:
             tickers_list=read_service.show_ticker_user(identifier)
             response= service_pb2.ShowTickersUserReply(
@@ -393,6 +487,18 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
     #Read
     def GetLatestValue(self, request, context):
         read_service=lecture_db.ReadService()
+
+        meta = dict(context.invocation_metadata())
+        session_token = meta.get('session_token', None)
+        if not session_token:
+            raise Exception("Manca il token. Fai login.")
+        
+        session_data = SESSION_STORE.get(session_token)
+        if not session_data:
+            raise Exception("Token non valido o vecchio e rimosso.")
+        
+        identifier = session_data["email"]
+
         try:
             stock_value, datetime_str =read_service.get_latest_value(identifier,request.ticker)
             response=service_pb2.GetLatestValueReply(
@@ -417,6 +523,18 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
     #Read
     def GetAverageValue(self, request, context):
         read_service=lecture_db.ReadService()
+
+        meta = dict(context.invocation_metadata())
+        session_token = meta.get('session_token', None)
+        if not session_token:
+            raise Exception("Manca il token. Fai login.")
+        
+        session_data = SESSION_STORE.get(session_token)
+        if not session_data:
+            raise Exception("Token non valido o vecchio e rimosso.")
+        
+        identifier = session_data["email"]
+
         try:
             average_stock_value,datetime_str =read_service.get_average_value(identifier,request.ticker,request.num_values)
             response= service_pb2.GetAverageValueReply(
@@ -437,6 +555,30 @@ class EchoService(service_pb2_grpc.EchoServiceServicer):
                 timestamp=""
             )
         return response
+    
+def clean_up_sessions():
+    while True:
+        time.sleep(3600)  # Ogni ora, per esempio
+        now = time.time()
+        to_remove = []
+        
+        for token, session_data in SESSION_STORE.items():
+            creation = session_data["creation_time"]
+            # Se il token esiste da più di MAX_TOKEN_AGE_SECONDS, lo rimuovi
+            if now - creation > MAX_TOKEN_AGE_SECONDS:
+                to_remove.append(token)
+
+        for t in to_remove:
+            del SESSION_STORE[t]
+
+def start_session_cleaner_thread():
+    cleaner_thread = threading.Thread(
+        target=clean_up_sessions,
+        daemon=True
+    )
+    cleaner_thread.start()
+
+
 # Funzione per avviare il server
 def serve():
     # Avvia il server HTTP per Prometheus sulla porta 8000
@@ -466,5 +608,7 @@ def serve():
 if __name__ == '__main__':
 
     start_cleaner_thread()
+
+    start_session_cleaner_thread()
 
     serve()

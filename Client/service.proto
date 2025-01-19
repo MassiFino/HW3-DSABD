@@ -23,6 +23,7 @@ message LoginUserRequest {
 message LoginUserReply {
   bool success = 1;
   string message = 2;
+  string session_token = 3;
 }
 
 message RegisterUserRequest {
@@ -35,6 +36,7 @@ message RegisterUserRequest {
 message RegisterUserReply {
   bool success = 1; // Indica se la registrazione è avvenuta con successo
   string message = 2; // Messaggio di conferma o errore
+  string session_token = 3;
 }
 
 

@@ -137,7 +137,10 @@ def reg_login(stub):
                         print(f"Risultato: {response.message}")
                     else:
                         print(f"Risultato: {response.message}")
-                        operazioni(stub)
+                        print("Token ricevuto:", response.session_token)
+
+                        token = response.session_token
+                        operazioni(stub, token)
         
                 except grpc.RpcError as e:
                     print(f"Errore: {e.code()} - {e.details()}")
@@ -161,7 +164,10 @@ def reg_login(stub):
 
                     else:
                         print(f"Risultato: {response.message}")
-                        operazioni(stub)
+                        print("Token ricevuto:", response.session_token)
+
+                        token = response.session_token
+                        operazioni(stub, token)
 
                 except grpc.RpcError as e:
                     print(f"Errore: {e.code()} - {e.details()}")
@@ -176,7 +182,7 @@ def reg_login(stub):
 
 
 
-def operazioni(stub):
+def operazioni(stub, token):
 
     while True:
         print("\nScegli un'opzione:")
@@ -199,19 +205,22 @@ def operazioni(stub):
                     break
 
             max_value, min_value = inserisci_valori_min_max()
+
+            metadata = [('session_token', token)]
             
             request = service_pb2.AddTickerUtenteRequest(ticker=ticker, max_value=max_value, min_value=min_value)
 
             try:
-                response = stub.AddTickerUtente(request)
+                response = stub.AddTickerUtente(request, metadata=metadata)
                 print(f"Risultato: {response.message}")
             except grpc.RpcError as e:
                 print(f"Errore: {e.code()} - {e.details()}")
 
         elif scelta == "2":
+            metadata = [('session_token', token)]
             request = service_pb2.ShowTickersUserRequest()
             try:
-                response = stub.ShowTickersUser(request)
+                response = stub.ShowTickersUser(request, metadata=metadata)
                 if not response.success:
                     print(f"{response.message}")
                 else:
@@ -243,7 +252,8 @@ def operazioni(stub):
 
             # Crea i metadati da passare nelle richieste gRPC
             metadata = [
-                ('requestid', requestid)
+                ('requestid', requestid),
+                ('session_token', token)
             ]
             
             request = service_pb2.UpdateUserRequest(ticker_old=ticker_old, ticker=ticker, max_value=max_value, min_value=min_value)
@@ -260,9 +270,11 @@ def operazioni(stub):
                 ticker= input("Inserisci ticker da eliminare: ").upper()
                 if verifica_ticker(ticker):  # Controllo del ticker
                     break
+            
+            metadata = [('session_token', token)]
             request = service_pb2.DeleteTickerUserRequest(ticker=ticker)
             try:
-                response = stub.DeleteTickerUser(request)
+                response = stub.DeleteTickerUser(request, metadata=metadata)
                 print(f"Risultato: {response.message}")
             except grpc.RpcError as e:
                 print(f"Errore: {e.code()} - {e.details()}")
@@ -271,12 +283,14 @@ def operazioni(stub):
                 ticker = input("Inserisci ticker di cui vuoi aggiungere/ modificare il valore: ").upper()
                 if verifica_ticker(ticker):  # Controllo del ticker
                     break
+            
+            metadata = [('session_token', token)]
 
             max_value, min_value = inserisci_valori_min_max()
 
             request = service_pb2.UpdateMinMaxValueRequest(ticker=ticker, max_value=max_value, min_value=min_value)
             try:
-                response = stub.UpdateMinMaxValue(request)
+                response = stub.UpdateMinMaxValue(request, metadata=metadata)
                 if not response.success:
                     print(f"{response.message}: {response.ticker}")
                 else:
@@ -291,10 +305,12 @@ def operazioni(stub):
                 ticker = input("Inserisci ticker: ").upper()
                 if verifica_ticker(ticker):  # Controllo del ticker
                     break
-        
+            
+            metadata = [('session_token', token)]
+
             request = service_pb2.GetLatestValueRequest(ticker=ticker)
             try:
-                response = stub.GetLatestValue(request)
+                response = stub.GetLatestValue(request, metadata=metadata)
                 if not response.success:
                     print(f"{response.message}: {response.ticker}")
                 else:
@@ -323,9 +339,11 @@ def operazioni(stub):
                 else:
                     print("Devi inserire un numero intero valido. Riprova.")
 
+            metadata = [('session_token', token)]
+
             request = service_pb2.GetAverageValueRequest(ticker=ticker, num_values=num_values)
             try:
-                response = stub.GetAverageValue(request)
+                response = stub.GetAverageValue(request, metadata=metadata)
                 if not response.success:
                     print(f"{response.message}: {response.ticker}")
                 else:
@@ -334,9 +352,11 @@ def operazioni(stub):
                 print(f"Errore: {e.code()} - {e.details()}")
 
         elif scelta == "8":
+
+            metadata = [('session_token', token)]
             request = service_pb2.DeleteUserRequest()
             try:
-                response = stub.DeleteUser(request)
+                response = stub.DeleteUser(request, metadata=metadata)
                 print(f"Risultato: {response.message}")
                 break
             except grpc.RpcError as e:
